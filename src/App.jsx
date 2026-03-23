@@ -7,11 +7,24 @@ import jsPDF from "jspdf";
 const COMPANY = {
   name: "JAI DURGA BUSINESS",
   address:
-    "No.19/6, Thiruvalluvar 4th St, Thiruneermalai Main Road, Kadaperi, Chennai-600045",
-  monthLabel: "Payslip for the month of March 2026"
+    "No.19/6, Thiruvalluvar 4th St, Thiruneermalai Main Road, Kadaperi, Chennai-600045"
 };
 
 const PAGE_SIZE = 6;
+const MONTHS = [
+  "January 2026",
+  "February 2026",
+  "March 2026",
+  "April 2026",
+  "May 2026",
+  "June 2026",
+  "July 2026",
+  "August 2026",
+  "September 2026",
+  "October 2026",
+  "November 2026",
+  "December 2026"
+];
 
 const normalize = (value) =>
   String(value || "")
@@ -86,6 +99,14 @@ const toWords = (amount) => {
   if (thousand) parts.push(`${chunkToWords(thousand)} Thousand`);
   if (hundred) parts.push(chunkToWords(hundred));
   return `${parts.join(" ")} Only`.replace(/\s+/g, " ").trim();
+};
+
+const formatMonthLabel = (month) => {
+  const parts = month.split(" ");
+  if (parts.length === 2 && /^\d{4}$/.test(parts[1])) {
+    return `Payslip for the month of ${parts[0]}'${parts[1]}`;
+  }
+  return `Payslip for the month of ${month}`;
 };
 
 const buildEmployees = (rows) =>
@@ -177,6 +198,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
+  const [selectedMonth, setSelectedMonth] = useState(MONTHS[2]);
+  const [selectedEmployees, setSelectedEmployees] = useState(new Set());
   const payslipRef = useRef(null);
 
   const selected = useMemo(
@@ -203,6 +226,12 @@ export default function App() {
     setPage(1);
   }, [searchTerm, employees.length]);
 
+  useEffect(() => {
+    if (selected?.id && !selectedEmployees.has(selected.id)) {
+      setSelectedEmployees((prev) => new Set(prev).add(selected.id));
+    }
+  }, [selected?.id]);
+
   const handleImport = async (file) => {
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data, { type: "array" });
@@ -218,6 +247,7 @@ export default function App() {
     const parsed = buildEmployees(normalizedRows);
     setEmployees(parsed);
     setSelectedId(parsed[0]?.id || "");
+    setSelectedEmployees(new Set(parsed.slice(0, 1).map((emp) => emp.id)));
     toast.success(`Imported ${parsed.length} employee rows successfully.`);
   };
 
@@ -229,8 +259,10 @@ export default function App() {
     });
   };
 
-  const downloadPdf = async () => {
-    if (!payslipRef.current) return;
+  const downloadPdfForEmployee = async (employee) => {
+    if (!payslipRef.current || !employee) return;
+    setSelectedId(employee.id);
+    await new Promise((resolve) => setTimeout(resolve, 120));
     const element = payslipRef.current;
     const canvas = await html2canvas(element, { scale: 2, backgroundColor: "#ffffff" });
     const imgData = canvas.toDataURL("image/png");
@@ -241,7 +273,68 @@ export default function App() {
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
     const y = (pageHeight - imgHeight) / 2;
     pdf.addImage(imgData, "PNG", 8, Math.max(8, y), imgWidth, imgHeight);
-    pdf.save(`${selected?.empName || "payslip"}.pdf`);
+    pdf.save(`${employee.empName || "payslip"}-${selectedMonth}.pdf`);
+  };
+
+  const downloadPdf = async () => {
+    if (selected) {
+      await downloadPdfForEmployee(selected);
+    }
+  };
+
+  const downloadSelectedCombined = async () => {
+    const list = employees.filter((emp) => selectedEmployees.has(emp.id));
+    if (!list.length) {
+      toast.error("Please select at least one employee.");
+      return;
+    }
+
+    const pdf = new jsPDF("p", "mm", "a4");
+    let isFirst = true;
+
+    for (const emp of list) {
+      setSelectedId(emp.id);
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const element = payslipRef.current;
+      if (!element) continue;
+      const canvas = await html2canvas(element, { scale: 2, backgroundColor: "#ffffff" });
+      const imgData = canvas.toDataURL("image/png");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth - 16;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const y = (pageHeight - imgHeight) / 2;
+      if (!isFirst) {
+        pdf.addPage();
+      }
+      pdf.addImage(imgData, "PNG", 8, Math.max(8, y), imgWidth, imgHeight);
+      isFirst = false;
+    }
+
+    pdf.save(`payslips-${selectedMonth}.pdf`);
+  };
+
+  const downloadSelectedSeparate = async () => {
+    const list = employees.filter((emp) => selectedEmployees.has(emp.id));
+    if (!list.length) {
+      toast.error("Please select at least one employee.");
+      return;
+    }
+    for (const emp of list) {
+      await downloadPdfForEmployee(emp);
+    }
+  };
+
+  const toggleEmployee = (empId) => {
+    setSelectedEmployees((prev) => {
+      const next = new Set(prev);
+      if (next.has(empId)) {
+        next.delete(empId);
+      } else {
+        next.add(empId);
+      }
+      return next;
+    });
   };
 
   return (
@@ -266,6 +359,20 @@ export default function App() {
               Import File
               <input type="file" accept=".xlsx,.xls,.csv" onChange={onFileChange} />
             </label>
+          </div>
+          <div className="month-row">
+            <span>Month</span>
+            <select
+              className="month-select"
+              value={selectedMonth}
+              onChange={(event) => setSelectedMonth(event.target.value)}
+            >
+              {MONTHS.map((month) => (
+                <option key={month} value={month}>
+                  {month}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="stats">
             <div>
@@ -308,9 +415,19 @@ export default function App() {
                 className={`employee-card ${selected?.id === emp.id ? "active" : ""}`}
                 onClick={() => setSelectedId(emp.id)}
               >
-                <div>
-                  <h4>{emp.empName || "Employee"}</h4>
-                  <p>{emp.designation || "Designation"}</p>
+                <div className="employee-left">
+                  <label className="select-box">
+                    <input
+                      type="checkbox"
+                      checked={selectedEmployees.has(emp.id)}
+                      onChange={() => toggleEmployee(emp.id)}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                  </label>
+                  <div>
+                    <h4>{emp.empName || "Employee"}</h4>
+                    <p>{emp.designation || "Designation"}</p>
+                  </div>
                 </div>
                 <span>{emp.empCode || "-"}</span>
               </button>
@@ -336,6 +453,23 @@ export default function App() {
               Next
             </button>
           </div>
+
+          <div className="bulk-actions">
+            <button
+              className="secondary"
+              onClick={downloadSelectedCombined}
+              disabled={!employees.length}
+            >
+              Download Selected (Combined PDF)
+            </button>
+            <button
+              className="secondary ghost"
+              onClick={downloadSelectedSeparate}
+              disabled={!employees.length}
+            >
+              Download Selected (Separate PDFs)
+            </button>
+          </div>
         </section>
 
         <section className="payslip-section">
@@ -354,85 +488,67 @@ export default function App() {
               <div className="payslip-header">
                 <h3>{COMPANY.name}</h3>
                 <p>{COMPANY.address}</p>
-                <p className="subtitle">{COMPANY.monthLabel}</p>
+                <p className="subtitle">{formatMonthLabel(selectedMonth)}</p>
               </div>
 
-              <div className="payslip-grid">
-                <div className="info">
-                  <div>
-                    <span>Emp No</span>
-                    <strong>{selected.empCode || "-"}</strong>
-                  </div>
-                  <div>
-                    <span>Emp Name</span>
-                    <strong>{selected.empName || "-"}</strong>
-                  </div>
-                  <div>
-                    <span>Designation</span>
-                    <strong>{selected.designation || "-"}</strong>
-                  </div>
-                  <div>
-                    <span>Department/Location</span>
-                    <strong>{selected.location || "-"}</strong>
-                  </div>
+              <div className="payslip-table info-table">
+                <div className="row head">
+                  <span>Emp No</span>
+                  <span>Emp Name</span>
+                  <span>Designation</span>
+                  <span>Department/Location</span>
                 </div>
-                <div className="info">
-                  <div>
-                    <span>Present Days</span>
-                    <strong>{selected.presentDays || "-"}</strong>
-                  </div>
-                  <div>
-                    <span>LOP Days</span>
-                    <strong>{selected.lopDays || "-"}</strong>
-                  </div>
-                  <div>
-                    <span>Net Pay</span>
-                    <strong>₹ {selected.netPay.toLocaleString("en-IN")}</strong>
-                  </div>
-                  <div>
-                    <span>Amount in Words</span>
-                    <strong>{toWords(selected.netPay)}</strong>
-                  </div>
+                <div className="row">
+                  <span>{selected.empCode || "-"}</span>
+                  <span>{selected.empName || "-"}</span>
+                  <span>{selected.designation || "-"}</span>
+                  <span>{selected.location || "-"}</span>
+                </div>
+                <div className="row head">
+                  <span>Present Days</span>
+                  <span>{selected.presentDays || "-"}</span>
+                  <span>LOP Days</span>
+                  <span>{selected.lopDays || "-"}</span>
                 </div>
               </div>
 
-              <div className="table">
-                <div className="table-header">
+              <div className="payslip-table earn-table">
+                <div className="row head five">
                   <span>Description</span>
                   <span>Scale</span>
                   <span>Earn Amt</span>
                   <span>Description</span>
                   <span>Deduct Amt</span>
                 </div>
-                <div className="table-row">
+                <div className="row five">
                   <span>Basic</span>
                   <span>{selected.earnings.basic.toLocaleString("en-IN")}</span>
                   <span>{selected.earnings.basic.toLocaleString("en-IN")}</span>
                   <span>PF</span>
                   <span>{selected.deductions.pf.toLocaleString("en-IN")}</span>
                 </div>
-                <div className="table-row">
+                <div className="row five">
                   <span>HRA</span>
                   <span>{selected.earnings.hra.toLocaleString("en-IN")}</span>
                   <span>{selected.earnings.hra.toLocaleString("en-IN")}</span>
                   <span>ESI</span>
                   <span>{selected.deductions.esi.toLocaleString("en-IN")}</span>
                 </div>
-                <div className="table-row">
+                <div className="row five">
                   <span>Washing</span>
                   <span>{selected.earnings.washing.toLocaleString("en-IN")}</span>
                   <span>{selected.earnings.washing.toLocaleString("en-IN")}</span>
-                  <span>Professional Tax</span>
+                  <span>Profession Tax</span>
                   <span>{selected.deductions.profTax.toLocaleString("en-IN")}</span>
                 </div>
-                <div className="table-row">
+                <div className="row five">
                   <span>Other Allow</span>
                   <span>{selected.earnings.otherAllow.toLocaleString("en-IN")}</span>
                   <span>{selected.earnings.otherAllow.toLocaleString("en-IN")}</span>
                   <span></span>
                   <span></span>
                 </div>
-                <div className="table-row total">
+                <div className="row five head">
                   <span>Total Earning</span>
                   <span></span>
                   <span>{selected.earnings.total.toLocaleString("en-IN")}</span>
@@ -441,12 +557,22 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="signatures">
-                <div>
-                  <span>Authorised Signatory</span>
+              <div className="payslip-table net-row">
+                <div className="row">
+                  <span className="net-label">NET PAY</span>
+                  <span className="net-value">
+                    {selected.netPay.toLocaleString("en-IN")}
+                  </span>
+                  <span className="net-words">
+                    ({toWords(selected.netPay)})
+                  </span>
                 </div>
-                <div>
-                  <span>Employee's Signatory</span>
+              </div>
+
+              <div className="payslip-table sign-row">
+                <div className="row">
+                  <span className="sign-cell">Authorised Signatory</span>
+                  <span className="sign-cell">Employee's Signatory</span>
                 </div>
               </div>
             </div>
