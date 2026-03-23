@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { ToastContainer, toast } from "react-toastify";
 import html2canvas from "html2canvas";
@@ -10,6 +10,8 @@ const COMPANY = {
     "No.19/6, Thiruvalluvar 4th St, Thiruneermalai Main Road, Kadaperi, Chennai-600045",
   monthLabel: "Payslip for the month of March 2026"
 };
+
+const PAGE_SIZE = 6;
 
 const normalize = (value) =>
   String(value || "")
@@ -89,8 +91,8 @@ const toWords = (amount) => {
 const buildEmployees = (rows) =>
   rows
     .map((row, index) => {
-      const empCode = pick(row, ["EMP CODE", "Emp No", "EMP NO"]);
-      const empName = pick(row, ["EMP NAME", "Emp Name"]);
+      const empCode = pick(row, ["EMP CODE", "Emp No", "EMP NO", "EMPID", "EMP ID"]);
+      const empName = pick(row, ["EMP NAME", "Emp Name", "NAME"]);
       if (!empCode && !empName) return null;
 
       const basic = toNumber(pick(row, ["BASIC", "STANDARD BASIC"]));
@@ -173,12 +175,33 @@ const buildRowsFromSheet = (sheet) => {
 export default function App() {
   const [employees, setEmployees] = useState([]);
   const [selectedId, setSelectedId] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [page, setPage] = useState(1);
   const payslipRef = useRef(null);
 
   const selected = useMemo(
     () => employees.find((emp) => emp.id === selectedId) || employees[0],
     [employees, selectedId]
   );
+
+  const filteredEmployees = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return employees;
+    return employees.filter((emp) => {
+      return (
+        String(emp.empCode || "").toLowerCase().includes(query) ||
+        String(emp.empName || "").toLowerCase().includes(query) ||
+        String(emp.designation || "").toLowerCase().includes(query)
+      );
+    });
+  }, [employees, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredEmployees.length / PAGE_SIZE));
+  const pagedEmployees = filteredEmployees.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, employees.length]);
 
   const handleImport = async (file) => {
     const data = await file.arrayBuffer();
@@ -263,11 +286,23 @@ export default function App() {
             <h2>Employee List</h2>
             <p>Select an employee to preview the payslip.</p>
           </div>
+
+          <div className="search-row">
+            <input
+              className="search-input"
+              type="search"
+              placeholder="Search by Emp ID, name, or designation"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+            />
+            <span className="search-count">{filteredEmployees.length} results</span>
+          </div>
+
           <div className="employee-list">
-            {employees.length === 0 && (
-              <div className="empty-state">Upload your payroll sheet to see employees here.</div>
+            {filteredEmployees.length === 0 && (
+              <div className="empty-state">No employees match your search.</div>
             )}
-            {employees.map((emp) => (
+            {pagedEmployees.map((emp) => (
               <button
                 key={emp.id}
                 className={`employee-card ${selected?.id === emp.id ? "active" : ""}`}
@@ -280,6 +315,26 @@ export default function App() {
                 <span>{emp.empCode || "-"}</span>
               </button>
             ))}
+          </div>
+
+          <div className="pagination">
+            <button
+              className="page-button"
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              disabled={page === 1}
+            >
+              Prev
+            </button>
+            <span>
+              Page {page} of {totalPages}
+            </span>
+            <button
+              className="page-button"
+              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={page === totalPages}
+            >
+              Next
+            </button>
           </div>
         </section>
 

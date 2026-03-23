@@ -350,3 +350,47 @@ h1 {
     border-bottom: 1px solid #1d1b16;
   }
 }
+
+.search-row {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-input {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #e4d7c5;
+  background: #fffefb;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.search-count {
+  font-size: 12px;
+  color: #6f655b;
+}
+
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 18px;
+  font-size: 13px;
+  color: #4c453c;
+}
+
+.page-button {
+  background: #fff6e8;
+  border: 1px solid #e4d7c5;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.page-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
